@@ -36,8 +36,6 @@ class AppMonitorService : LifecycleService() {
 
     private var lastForegroundApp: String? = null
 
-    private val interstitialShownForSession = mutableSetOf<String>()
-
     // Verrou synchrone partagé : empêche de traiter deux fois la même app en même
     // temps, que ce soit déclenché par l'évènement MOVE_TO_FOREGROUND ou par la
     // vérification périodique faite à chaque cycle de polling (voir triggerEvaluation).
@@ -219,7 +217,6 @@ class AppMonitorService : LifecycleService() {
         }
 
         sessionStartTimes.remove(packageName)
-        interstitialShownForSession.remove(packageName)
     }
 
     private suspend fun checkThresholdExceeded(packageName: String) {
@@ -277,17 +274,39 @@ class AppMonitorService : LifecycleService() {
         triggerEvaluation(packageName, timestamp)
     }
 
-    private suspend fun evaluateAndAct(packageName: String, now: Long) {
-        Log.d("AppMonitorRaw", "evaluateAndAct($packageName) démarré — overlayActiveFor=${OverlayState.activeFor} interstitialShownForSession=$interstitialShownForSession")
-        if (packageName == applicationContext.packageName) return
-        if (packageName == OverlayState.activeFor) return   // overlay déjà affiché pour cette app
+    private suspend fun evaluateAndAct(
+        packageName: String,
+        now: Long
+    ) {
 
-        val exceeded = isThresholdExceeded(packageName, now)
+        Log.d(
+            "AppMonitorRaw",
+            "evaluateAndAct($packageName) " +
+                    "activeFor=${OverlayState.activeFor} " +
+                    "completedFor=${OverlayState.completedFor}"
+        )
 
-        if (exceeded) {
+        if (packageName == applicationContext.packageName) {
+            return
+        }
+
+        // 1. Notre écran est réellement visible.
+        if (OverlayState.activeFor == packageName) {
+            return
+        }
+
+        // 2. L'utilisateur a réellement validé.
+        if (OverlayState.completedFor == packageName) {
+            return
+        }
+
+        // 3. Ton contrôle de limite existant.
+        if (isThresholdExceeded(packageName, now)) {
+
             launchBlockScreen(packageName)
-        } else if (packageName !in interstitialShownForSession) {
-            interstitialShownForSession.add(packageName)
+
+        } else {
+
             launchInterstitialScreen(packageName)
         }
     }
@@ -309,7 +328,6 @@ class AppMonitorService : LifecycleService() {
 
     private fun launchInterstitialScreen(packageName: String) {
         Log.d("AppMonitorRaw", "launchInterstitialScreen($packageName) — overlayActiveFor: ${OverlayState.activeFor} -> $packageName")
-        OverlayState.activeFor = packageName   // ← nouveau
 
         val appName = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
@@ -334,7 +352,6 @@ class AppMonitorService : LifecycleService() {
         }
 
         Log.d("AppMonitorRaw", "launchBlockScreen($packageName) — overlayActiveFor: ${OverlayState.activeFor} -> $packageName")
-        OverlayState.activeFor = packageName   // ← nouveau
 
         val appName = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()

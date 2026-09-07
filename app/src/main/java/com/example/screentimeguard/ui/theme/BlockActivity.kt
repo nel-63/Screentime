@@ -41,6 +41,25 @@ class BlockActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+
+        trackedPackageName?.let { packageName ->
+            OverlayState.activeFor = packageName
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        trackedPackageName?.let { packageName ->
+
+            if (OverlayState.activeFor == packageName) {
+                OverlayState.activeFor = null
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         if (!isChangingConfigurations && trackedPackageName != null &&

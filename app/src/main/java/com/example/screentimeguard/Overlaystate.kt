@@ -17,6 +17,22 @@ package com.example.screentimeguard
  * quand elle a vraiment fini d'être affichée.
  */
 object OverlayState {
+
+    /**
+     * Package pour lequel un overlay est ACTUELLEMENT visible.
+     *
+     * Cette valeur doit être définie par l'Activity dans onStart()
+     * et supprimée dans onStop().
+     */
     @Volatile
     var activeFor: String? = null
+
+    /**
+     * Package pour lequel l'utilisateur a réellement validé
+     * l'interstitiel pendant la session actuelle.
+     *
+     * null = aucune application validée.
+     */
+    @Volatile
+    var completedFor: String? = null
 }

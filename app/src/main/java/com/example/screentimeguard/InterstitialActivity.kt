@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.screentimeguard.ui.theme.ScreenTimeGuardTheme
 import kotlinx.coroutines.delay
+import android.util.Log
 
 class InterstitialActivity : ComponentActivity() {
 
@@ -38,8 +39,50 @@ class InterstitialActivity : ComponentActivity() {
                 InterstitialScreen(
                     appName = appName,
                     waitSeconds = 10,
-                    onContinue = { finish() },
+                    onContinue = {
+
+                        trackedPackageName?.let { packageName ->
+
+                            OverlayState.completedFor = packageName
+
+                            Log.d(
+                                "OverlayState",
+                                "Utilisateur a validé l'interstitiel pour $packageName"
+                            )
+                        }
+
+                        finish()
+                    },
                     onCancel = { goToHomeScreen() }
+                )
+            }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+
+        trackedPackageName?.let { packageName ->
+            OverlayState.activeFor = packageName
+
+            Log.d(
+                "OverlayState",
+                "Interstitial VISIBLE pour $packageName"
+            )
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        trackedPackageName?.let { packageName ->
+
+            if (OverlayState.activeFor == packageName) {
+                OverlayState.activeFor = null
+
+                Log.d(
+                    "OverlayState",
+                    "Interstitial PLUS VISIBLE pour $packageName"
                 )
             }
         }
@@ -47,13 +90,12 @@ class InterstitialActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // On ne libère l'overlay que si l'activité est VRAIMENT terminée
-        // (pas juste recréée suite à une rotation d'écran par exemple),
-        // et seulement si c'est bien notre app suivie qui est concernée.
-        if (!isChangingConfigurations && trackedPackageName != null &&
-            OverlayState.activeFor == trackedPackageName
-        ) {
-            OverlayState.activeFor = null
+
+        trackedPackageName?.let { packageName ->
+
+            if (OverlayState.activeFor == packageName) {
+                OverlayState.activeFor = null
+            }
         }
     }
 
