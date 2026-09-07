@@ -21,10 +21,13 @@ import kotlinx.coroutines.delay
 
 class InterstitialActivity : ComponentActivity() {
 
+    private var trackedPackageName: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val appName = intent.getStringExtra("appName") ?: "cette application"
+        trackedPackageName = intent.getStringExtra("packageName")
 
         onBackPressedDispatcher.addCallback(this) {
             goToHomeScreen()
@@ -39,6 +42,18 @@ class InterstitialActivity : ComponentActivity() {
                     onCancel = { goToHomeScreen() }
                 )
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // On ne libère l'overlay que si l'activité est VRAIMENT terminée
+        // (pas juste recréée suite à une rotation d'écran par exemple),
+        // et seulement si c'est bien notre app suivie qui est concernée.
+        if (!isChangingConfigurations && trackedPackageName != null &&
+            OverlayState.activeFor == trackedPackageName
+        ) {
+            OverlayState.activeFor = null
         }
     }
 

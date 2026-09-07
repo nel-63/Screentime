@@ -30,11 +30,18 @@ class AppMonitorService : LifecycleService() {
     private var lastQueryTime = System.currentTimeMillis()
     private val pollingInterval = 2000L
 
-    private var overlayActiveFor: String? = null
+    // overlayActiveFor a été déplacé dans OverlayState (voir OverlayState.kt) :
+    // seule l'activité overlay elle-même peut désormais le remettre à null,
+    // via onDestroy(), au lieu de le déduire d'évènements UsageEvents ambigus.
 
     private var lastForegroundApp: String? = null
 
     private val interstitialShownForSession = mutableSetOf<String>()
+
+    // Verrou synchrone partagé : empêche de traiter deux fois la même app en même
+    // temps, que ce soit déclenché par l'évènement MOVE_TO_FOREGROUND ou par la
+    // vérification périodique faite à chaque cycle de polling (voir triggerEvaluation).
+    private val processingApp = mutableSetOf<String>()
 
     private val pollingRunnable = object : Runnable {
         override fun run() {
@@ -109,6 +116,21 @@ class AppMonitorService : LifecycleService() {
             val packageName = event.packageName
             val timestamp = event.timeStamp
 
+            // [DIAGNOSTIC] log de TOUT évènement brut, y compris notre propre app,
+            // pour voir la vraie séquence envoyée par Android.
+            val eventTypeName = when (event.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> "FOREGROUND"
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> "BACKGROUND"
+                UsageEvents.Event.ACTIVITY_PAUSED -> "ACTIVITY_PAUSED"
+                UsageEvents.Event.ACTIVITY_RESUMED -> "ACTIVITY_RESUMED"
+                UsageEvents.Event.ACTIVITY_STOPPED -> "ACTIVITY_STOPPED"
+                else -> "OTHER(${event.eventType})"
+            }
+            Log.d(
+                "AppMonitorRaw",
+                "[$eventTypeName] pkg=$packageName ts=$timestamp overlayActiveFor=${OverlayState.activeFor} lastForegroundApp=$lastForegroundApp"
+            )
+
             // Ignore complètement les transitions liées à notre propre app
             // (InterstitialActivity / BlockActivity qui s'ouvrent/ferment)
             if (packageName == ownPackage) {
@@ -117,9 +139,13 @@ class AppMonitorService : LifecycleService() {
 
             if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                 // Si l'app qui revient au premier plan est celle pour laquelle
-                // notre overlay était actif, c'est un "retour", pas une nouvelle ouverture
-                if (packageName == overlayActiveFor) {
-                    overlayActiveFor = null
+                // notre overlay est actif, on ignore l'évènement SANS remettre
+                // overlayActiveFor à null ici : ça peut être un simple blip
+                // transitoire pendant l'ouverture de notre overlay, pas un vrai
+                // retour de l'utilisateur. Seul OverlayState (mis à jour par
+                // l'activité overlay dans onDestroy) fait foi.
+                if (packageName == OverlayState.activeFor) {
+                    Log.d("AppMonitorRaw", "  -> évènement ignoré, overlay actif pour $packageName (pas de reset ici)")
                     lastForegroundApp = packageName
                     continue  // on ne redéclenche ni l'interstitiel ni un nouveau départ de session
                 }
@@ -134,7 +160,7 @@ class AppMonitorService : LifecycleService() {
                 }
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                     // Si c'est notre propre overlay qui prend le dessus, ce n'est pas une vraie sortie
-                    if (packageName != overlayActiveFor) {
+                    if (packageName != OverlayState.activeFor) {
                         onAppLeftForeground(packageName, timestamp)
                     }
                 }
@@ -144,12 +170,26 @@ class AppMonitorService : LifecycleService() {
         lastQueryTime = now
 
         lastForegroundApp?.let { currentApp ->
-            if (currentApp in trackedPackages && currentApp != overlayActiveFor) {
-                lifecycleScope.launch {
-                    if (isThresholdExceeded(currentApp, System.currentTimeMillis())) {
-                        launchBlockScreen(currentApp)
-                    }
-                }
+            // Vérification PÉRIODIQUE (à chaque cycle de polling, ~2s), en plus
+            // de la vérification déclenchée par l'évènement MOVE_TO_FOREGROUND.
+            // Ça comble les cas où l'app arrive au premier plan par un chemin
+            // qui ne déclenche pas proprement onAppEnteredForeground (ex : bouton
+            // "applications récentes" / multitâche) : même si l'entrée initiale
+            // est ratée, ce check la rattrape au plus tard au polling suivant.
+            if (currentApp in trackedPackages) {
+                triggerEvaluation(currentApp, System.currentTimeMillis())
+            }
+        }
+    }
+
+    private fun triggerEvaluation(packageName: String, now: Long) {
+        if (packageName in processingApp) return
+        processingApp.add(packageName)
+        lifecycleScope.launch {
+            try {
+                evaluateAndAct(packageName, now)
+            } finally {
+                processingApp.remove(packageName)
             }
         }
     }
@@ -234,27 +274,21 @@ class AppMonitorService : LifecycleService() {
     private fun onAppEnteredForeground(packageName: String, timestamp: Long) {
         sessionStartTimes[packageName] = timestamp
         Log.d("AppMonitor", "Début session : $packageName à $timestamp")
-
-        lifecycleScope.launch {
-            handleAppEntry(packageName, timestamp)
-        }
+        triggerEvaluation(packageName, timestamp)
     }
 
-    private suspend fun handleAppEntry(packageName: String, now: Long) {
+    private suspend fun evaluateAndAct(packageName: String, now: Long) {
+        Log.d("AppMonitorRaw", "evaluateAndAct($packageName) démarré — overlayActiveFor=${OverlayState.activeFor} interstitialShownForSession=$interstitialShownForSession")
         if (packageName == applicationContext.packageName) return
-        if (packageName == overlayActiveFor) return   // ← nouveau : overlay déjà affiché pour cette app
+        if (packageName == OverlayState.activeFor) return   // overlay déjà affiché pour cette app
 
         val exceeded = isThresholdExceeded(packageName, now)
 
         if (exceeded) {
-            if (lastForegroundApp == packageName) {
-                launchBlockScreen(packageName)
-            }
+            launchBlockScreen(packageName)
         } else if (packageName !in interstitialShownForSession) {
             interstitialShownForSession.add(packageName)
-            if (lastForegroundApp == packageName) {
-                launchInterstitialScreen(packageName)
-            }
+            launchInterstitialScreen(packageName)
         }
     }
 
@@ -274,7 +308,8 @@ class AppMonitorService : LifecycleService() {
     }
 
     private fun launchInterstitialScreen(packageName: String) {
-        overlayActiveFor = packageName   // ← nouveau
+        Log.d("AppMonitorRaw", "launchInterstitialScreen($packageName) — overlayActiveFor: ${OverlayState.activeFor} -> $packageName")
+        OverlayState.activeFor = packageName   // ← nouveau
 
         val appName = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
@@ -287,6 +322,7 @@ class AppMonitorService : LifecycleService() {
                     Intent.FLAG_ACTIVITY_CLEAR_TASK or
                     Intent.FLAG_ACTIVITY_MULTIPLE_TASK
             putExtra("appName", appName)
+            putExtra("packageName", packageName)
         }
         startActivity(intent)
     }
@@ -297,7 +333,8 @@ class AppMonitorService : LifecycleService() {
             return
         }
 
-        overlayActiveFor = packageName   // ← nouveau
+        Log.d("AppMonitorRaw", "launchBlockScreen($packageName) — overlayActiveFor: ${OverlayState.activeFor} -> $packageName")
+        OverlayState.activeFor = packageName   // ← nouveau
 
         val appName = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(packageName, 0)).toString()
@@ -310,6 +347,7 @@ class AppMonitorService : LifecycleService() {
                     Intent.FLAG_ACTIVITY_CLEAR_TASK or
                     Intent.FLAG_ACTIVITY_MULTIPLE_TASK
             putExtra("appName", appName)
+            putExtra("packageName", packageName)
         }
         startActivity(intent)
     }

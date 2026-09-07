@@ -19,10 +19,13 @@ import com.example.screentimeguard.ui.theme.ScreenTimeGuardTheme
 
 class BlockActivity : ComponentActivity() {
 
+    private var trackedPackageName: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val appName = intent.getStringExtra("appName") ?: "cette application"
+        trackedPackageName = intent.getStringExtra("packageName")
 
         onBackPressedDispatcher.addCallback(this) {
             goToHomeScreen()
@@ -35,6 +38,15 @@ class BlockActivity : ComponentActivity() {
                     onGoHome = { goToHomeScreen() }
                 )
             }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (!isChangingConfigurations && trackedPackageName != null &&
+            OverlayState.activeFor == trackedPackageName
+        ) {
+            OverlayState.activeFor = null
         }
     }
 
