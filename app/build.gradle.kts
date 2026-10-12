@@ -56,5 +56,6 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.lifecycle.service)
+    implementation("androidx.compose.material:material-icons-core")
 
 }

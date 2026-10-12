@@ -44,27 +44,31 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             ScreenTimeGuardTheme {
-                var currentScreen by remember { mutableStateOf("main") }
+                var currentScreen by remember { mutableStateOf("home") }
 
                 when (currentScreen) {
                     "selection" -> AppSelectionScreen(
-                        onDone = { currentScreen = "main" }
+                        onDone = { currentScreen = "home" }
                     )
                     "stats" -> StatsScreen(
-                        onBack = { currentScreen = "main" }
+                        onBack = { currentScreen = "home" }
                     )
                     "thresholds" -> ThresholdSettingsScreen(
-                        onBack = { currentScreen = "main" }
+                        onBack = { currentScreen = "home" }
                     )
-                    else -> MainScreen(
+                    "settings" -> SettingsScreen(
                         usageAccessGranted = usageAccessGranted,
                         overlayPermissionGranted = overlayPermissionGranted,
                         onRequestPermission = { openUsageAccessSettings() },
                         onRequestOverlayPermission = { requestOverlayPermission() },
                         onStartService = { startMonitorService() },
-                        onSelectApps = { currentScreen = "selection" },
-                        onShowStats = { currentScreen = "stats" },
-                        onSetThresholds = { currentScreen = "thresholds" }
+                        onBack = { currentScreen = "home" }
+                    )
+                    else -> LockerHomeScreen(
+                        onSettings = { currentScreen = "settings" },
+                        onStats = { currentScreen = "stats" },
+                        onLimits = { currentScreen = "thresholds" },
+                        onApps = { currentScreen = "selection" }
                     )
                 }
             }
@@ -115,15 +119,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(
+fun SettingsScreen(
     usageAccessGranted: Boolean,
     overlayPermissionGranted: Boolean,
     onRequestPermission: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onStartService: () -> Unit,
-    onSelectApps: () -> Unit,
-    onShowStats: () -> Unit,
-    onSetThresholds: () -> Unit
+    onBack: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -133,7 +135,7 @@ fun MainScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Screen Time Guard",
+            text = "Paramètres",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -177,24 +179,10 @@ fun MainScreen(
         }
 
         Button(
-            onClick = onSelectApps,
+            onClick = onBack,
             modifier = Modifier.padding(top = 12.dp)
         ) {
-            Text("Choisir les applications à surveiller")
-        }
-
-        Button(
-            onClick = onShowStats,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Voir les statistiques")
-        }
-
-        Button(
-            onClick = onSetThresholds,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Définir les limites")
+            Text("Retour")
         }
     }
 }
