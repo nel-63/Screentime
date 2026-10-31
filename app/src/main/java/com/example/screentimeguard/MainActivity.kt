@@ -10,17 +10,17 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.screentimeguard.ui.theme.ScreenTimeGuardTheme
 
 class MainActivity : ComponentActivity() {
@@ -127,62 +127,75 @@ fun SettingsScreen(
     onStartService: () -> Unit,
     onBack: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    ScreenScaffold(
+        title = "Paramètres",
+        subtitle = "Autorisations et surveillance",
+        onBack = onBack
     ) {
-        Text(
-            text = "Paramètres",
-            style = MaterialTheme.typography.headlineMedium
+        PermissionCard(
+            title = "Accès aux données d'utilisation",
+            granted = usageAccessGranted,
+            buttonLabel = "Autoriser l'accès aux données",
+            onClick = onRequestPermission
         )
 
-        Text(
-            text = if (usageAccessGranted) {
-                "Accès aux données d'utilisation : AUTORISÉ"
+        PermissionCard(
+            title = "Affichage par-dessus les autres apps",
+            granted = overlayPermissionGranted,
+            buttonLabel = "Autoriser l'affichage par-dessus",
+            onClick = onRequestOverlayPermission
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        RedButton(
+            text = "Démarrer la surveillance",
+            onClick = onStartService
+        )
+    }
+}
+
+@Composable
+private fun PermissionCard(
+    title: String,
+    granted: Boolean,
+    buttonLabel: String,
+    onClick: () -> Unit
+) {
+    AppCard(modifier = Modifier.padding(vertical = 6.dp)) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    color = AppColors.TextPrimary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                StatusChip(granted = granted)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            // Rouge tant que la permission manque, gris une fois accordée.
+            if (granted) {
+                GreyButton(text = buttonLabel, onClick = onClick)
             } else {
-                "Accès aux données d'utilisation : NON AUTORISÉ"
-            },
-            modifier = Modifier.padding(top = 20.dp)
-        )
-
-        Text(
-            text = if (overlayPermissionGranted) {
-                "Permission d'affichage par-dessus : AUTORISÉE"
-            } else {
-                "Permission d'affichage par-dessus : NON AUTORISÉE"
-            },
-            modifier = Modifier.padding(top = 8.dp)
-        )
-
-        Button(
-            onClick = onRequestPermission,
-            modifier = Modifier.padding(top = 20.dp)
-        ) {
-            Text("Autoriser l'accès aux données")
-        }
-
-        Button(
-            onClick = onRequestOverlayPermission,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Autoriser l'affichage par-dessus")
-        }
-
-        Button(
-            onClick = onStartService,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Démarrer la surveillance")
-        }
-
-        Button(
-            onClick = onBack,
-            modifier = Modifier.padding(top = 12.dp)
-        ) {
-            Text("Retour")
+                RedButton(text = buttonLabel, onClick = onClick)
+            }
         }
     }
+}
+
+@Composable
+private fun StatusChip(granted: Boolean) {
+    Text(
+        text = if (granted) "AUTORISÉ" else "NON AUTORISÉ",
+        color = androidx.compose.ui.graphics.Color.White,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (granted) AppColors.CardAlt else AppColors.Red)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    )
 }
